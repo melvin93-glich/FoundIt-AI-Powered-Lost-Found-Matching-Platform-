@@ -129,7 +129,7 @@ async def admin_list_lost_items(current_admin=Depends(require_admin)):
     db = get_database()
     items = []
     if db is not None:
-        cursor = db["items"].find({"type": "lost"}).sort("created_at", -1)
+        cursor = db["items"].find({"type": "lost", "deleted": {"$ne": True}}).sort("created_at", -1)
         async for doc in cursor:
             doc["id"] = str(doc["_id"])
             items.append(ItemResponse(**doc))
@@ -161,14 +161,15 @@ async def admin_create_lost_on_behalf(
     file_bytes = None
     if file:
         file_bytes = await file.read()
+        validate_image_upload(file_bytes, file.filename)
         image_url = await upload_image_to_cloudinary(file_bytes, file.filename)
 
-    detected_objects = yolo_service.detect_objects(file_bytes) if file_bytes else []
-    extracted_text = ocr_service.extract_text(file_bytes) if file_bytes else ""
+    detected_objects = await run_in_threadpool(yolo_service.detect_objects, file_bytes) if file_bytes else []
+    extracted_text = await run_in_threadpool(ocr_service.extract_text, file_bytes) if file_bytes else ""
     
     query_text = f"{title} {description} {category} {' '.join(detected_objects)} {extracted_text}"
-    text_embedding = text_service.get_text_embedding(query_text)
-    image_embedding = clip_service.get_image_embedding(file_bytes) if file_bytes else [0.0]*512
+    text_embedding = await run_in_threadpool(text_service.get_text_embedding, query_text)
+    image_embedding = await run_in_threadpool(clip_service.get_image_embedding, file_bytes) if file_bytes else [0.0]*512
 
     doc = {
         "type": "lost",
@@ -181,10 +182,12 @@ async def admin_create_lost_on_behalf(
         "date_time": date_time,
         "image_url": image_url,
         "status": "active",
+        "deleted": False,
         "detected_objects": detected_objects,
         "extracted_text": extracted_text,
         "text_embedding": text_embedding,
         "image_embedding": image_embedding,
+        "embedding_model_version": settings.EMBEDDING_MODEL_VERSION,
         "created_by_admin": True,
         "created_at": datetime.utcnow()
     }
@@ -250,25 +253,48 @@ async def admin_delete_lost_item(item_id: str, current_admin=Depends(require_adm
     db = get_database()
     if db is not None:
         try:
-            item = await db["items"].find_one({"_id": ObjectId(item_id), "type": "lost"})
-            affected_user_id = item.get("user_id") if item else None
+            item = await db["items"].find_one({"_id": ObjectId(item_id), "type": "lost", "deleted": {"$ne": True}})
+            if not item:
+                raise HTTPException(status_code=404, detail="Lost item not found")
+
+            affected_user_id = item.get("user_id")
             
-            # 1. Permanently delete item
-            await db["items"].delete_one({"_id": ObjectId(item_id)})
-            
-            # 2. Cascade delete all associated match records referencing item_id
-            matches_count = await db["items"].update_many(
-                {"matched_item_id": item_id},
-                {"$set": {"status": "active", "matched_item_id": None}}
+            # Snapshot key fields for self-contained audit log
+            item_snapshot = {
+                "title": item.get("title"),
+                "description": item.get("description"),
+                "category": item.get("category"),
+                "location": item.get("location"),
+                "image_url": item.get("image_url"),
+                "user_id": item.get("user_id"),
+                "user_name": item.get("user_name")
+            }
+
+            # 1. Soft-delete item
+            await db["items"].update_one(
+                {"_id": ObjectId(item_id)},
+                {"$set": {"deleted": True, "deleted_at": datetime.utcnow(), "status": "deleted"}}
             )
             
-            await log_admin_action(current_admin, "delete_item", "lost_item", item_id, affected_user_id, f"Deleted lost item report")
-            if matches_count.modified_count > 0:
-                await log_admin_action(current_admin, "cascade_delete_matches", "lost_item", item_id, affected_user_id, f"Cascade reset {matches_count.modified_count} match links")
+            # 2. Cascade cleanup for matches
+            await db["matches"].delete_many({
+                "$or": [{"source_item_id": item_id}, {"target_item_id": item_id}]
+            })
+            
+            await log_admin_action(
+                current_admin,
+                "delete_item",
+                "lost_item",
+                item_id,
+                affected_user_id,
+                f"Soft-deleted lost item '{item.get('title')}'. Snapshot: {item_snapshot}"
+            )
 
-        except Exception:
-            pass
-    return {"message": "Lost item report and associated match links permanently removed"}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=str(e))
+    return {"message": "Lost item report soft-deleted and snapshot stored in audit trail"}
 
 # ---------------- FOUND ITEMS MANAGEMENT & ON BEHALF ----------------
 
@@ -277,7 +303,7 @@ async def admin_list_found_items(current_admin=Depends(require_admin)):
     db = get_database()
     items = []
     if db is not None:
-        cursor = db["items"].find({"type": "found"}).sort("created_at", -1)
+        cursor = db["items"].find({"type": "found", "deleted": {"$ne": True}}).sort("created_at", -1)
         async for doc in cursor:
             doc["id"] = str(doc["_id"])
             items.append(ItemResponse(**doc))
@@ -309,14 +335,15 @@ async def admin_create_found_on_behalf(
     file_bytes = None
     if file:
         file_bytes = await file.read()
+        validate_image_upload(file_bytes, file.filename)
         image_url = await upload_image_to_cloudinary(file_bytes, file.filename)
 
-    detected_objects = yolo_service.detect_objects(file_bytes) if file_bytes else []
-    extracted_text = ocr_service.extract_text(file_bytes) if file_bytes else ""
+    detected_objects = await run_in_threadpool(yolo_service.detect_objects, file_bytes) if file_bytes else []
+    extracted_text = await run_in_threadpool(ocr_service.extract_text, file_bytes) if file_bytes else ""
     
     query_text = f"{title} {description} {category} {' '.join(detected_objects)} {extracted_text}"
-    text_embedding = text_service.get_text_embedding(query_text)
-    image_embedding = clip_service.get_image_embedding(file_bytes) if file_bytes else [0.0]*512
+    text_embedding = await run_in_threadpool(text_service.get_text_embedding, query_text)
+    image_embedding = await run_in_threadpool(clip_service.get_image_embedding, file_bytes) if file_bytes else [0.0]*512
 
     doc = {
         "type": "found",
@@ -329,10 +356,12 @@ async def admin_create_found_on_behalf(
         "date_time": date_time,
         "image_url": image_url,
         "status": "active",
+        "deleted": False,
         "detected_objects": detected_objects,
         "extracted_text": extracted_text,
         "text_embedding": text_embedding,
         "image_embedding": image_embedding,
+        "embedding_model_version": settings.EMBEDDING_MODEL_VERSION,
         "created_by_admin": True,
         "created_at": datetime.utcnow()
     }
@@ -398,25 +427,48 @@ async def admin_delete_found_item(item_id: str, current_admin=Depends(require_ad
     db = get_database()
     if db is not None:
         try:
-            item = await db["items"].find_one({"_id": ObjectId(item_id), "type": "found"})
-            affected_user_id = item.get("user_id") if item else None
+            item = await db["items"].find_one({"_id": ObjectId(item_id), "type": "found", "deleted": {"$ne": True}})
+            if not item:
+                raise HTTPException(status_code=404, detail="Found item not found")
 
-            # 1. Delete item
-            await db["items"].delete_one({"_id": ObjectId(item_id)})
+            affected_user_id = item.get("user_id")
+
+            # Snapshot key fields for self-contained audit log
+            item_snapshot = {
+                "title": item.get("title"),
+                "description": item.get("description"),
+                "category": item.get("category"),
+                "location": item.get("location"),
+                "image_url": item.get("image_url"),
+                "user_id": item.get("user_id"),
+                "user_name": item.get("user_name")
+            }
+
+            # 1. Soft-delete item
+            await db["items"].update_one(
+                {"_id": ObjectId(item_id)},
+                {"$set": {"deleted": True, "deleted_at": datetime.utcnow(), "status": "deleted"}}
+            )
             
-            # 2. Cascade delete all associated match links
-            matches_count = await db["items"].update_many(
-                {"matched_item_id": item_id},
-                {"$set": {"status": "active", "matched_item_id": None}}
+            # 2. Cascade cleanup for matches
+            await db["matches"].delete_many({
+                "$or": [{"source_item_id": item_id}, {"target_item_id": item_id}]
+            })
+
+            await log_admin_action(
+                current_admin,
+                "delete_item",
+                "found_item",
+                item_id,
+                affected_user_id,
+                f"Soft-deleted found item '{item.get('title')}'. Snapshot: {item_snapshot}"
             )
 
-            await log_admin_action(current_admin, "delete_item", "found_item", item_id, affected_user_id, f"Deleted found item report")
-            if matches_count.modified_count > 0:
-                await log_admin_action(current_admin, "cascade_delete_matches", "found_item", item_id, affected_user_id, f"Cascade reset {matches_count.modified_count} match links")
-
-        except Exception:
-            pass
-    return {"message": "Found item report and associated match links permanently removed"}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=400, detail=str(e))
+    return {"message": "Found item report soft-deleted and snapshot stored in audit trail"}
 
 # ---------------- MATCH OVERRIDES ----------------
 

@@ -37,9 +37,15 @@ class CLIPService:
 
             inputs = self.processor(images=image, return_tensors="pt").to(self.device)
             with torch.no_grad():
-                image_features = self.model.get_image_features(**inputs)
+                features = self.model.get_image_features(**inputs)
+                if hasattr(features, "image_embeds"):
+                    image_features = features.image_embeds
+                elif hasattr(features, "pooler_output"):
+                    image_features = features.pooler_output
+                else:
+                    image_features = features
                 # Normalize embedding
-                image_features = image_features / image_features.norm(p=2, dim=-1, keepdim=True)
+                image_features = image_features / torch.norm(image_features, p=2, dim=-1, keepdim=True)
             
             return image_features.cpu().numpy()[0].tolist()
         except Exception as e:

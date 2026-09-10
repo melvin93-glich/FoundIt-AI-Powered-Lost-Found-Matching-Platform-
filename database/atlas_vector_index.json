@@ -1,0 +1,32 @@
+{
+  "name": "foundit_vector_index",
+  "type": "vectorSearch",
+  "definition": {
+    "fields": [
+      {
+        "type": "vector",
+        "path": "text_embedding",
+        "numDimensions": 384,
+        "similarity": "cosine"
+      },
+      {
+        "type": "vector",
+        "path": "image_embedding",
+        "numDimensions": 512,
+        "similarity": "cosine"
+      },
+      {
+        "type": "filter",
+        "path": "type"
+      },
+      {
+        "type": "filter",
+        "path": "category"
+      },
+      {
+        "type": "filter",
+        "path": "deleted"
+      }
+    ]
+  }
+}

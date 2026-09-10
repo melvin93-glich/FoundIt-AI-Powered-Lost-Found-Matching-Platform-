@@ -34,25 +34,36 @@ def generate_embeddings(state: AgentState) -> AgentState:
     state["text_embedding"] = text_emb
     return state
 
-def vector_search(state: AgentState) -> AgentState:
-    """Node 3: Compute candidate vector similarity scores."""
+import logging
+import asyncio
+from config import settings
+from ai.vector_search_providers import get_vector_search_provider
+
+logger = logging.getLogger(__name__)
+
+async def vector_search(state: AgentState) -> AgentState:
+    """Node 3: Compute candidate vector similarity scores using VectorSearchProvider."""
     candidates = state.get("candidate_items", [])
     src_img_emb = state.get("image_embedding", [])
     src_txt_emb = state.get("text_embedding", [])
-    
-    scored = []
+    source = state.get("source_item", {})
+
+    src_version = source.get("embedding_model_version", settings.EMBEDDING_MODEL_VERSION)
+
+    # Embedding version check
+    filtered_candidates = []
     for cand in candidates:
-        cand_img_emb = cand.get("image_embedding", [])
-        cand_txt_emb = cand.get("text_embedding", [])
+        cand_version = cand.get("embedding_model_version", settings.EMBEDDING_MODEL_VERSION)
+        if cand_version != src_version:
+            logger.warning(
+                f"Embedding version mismatch between source ({src_version}) and candidate {cand.get('id')} ({cand_version}). Skipping candidate."
+            )
+            continue
+        filtered_candidates.append(cand)
 
-        img_sim = cosine_similarity(src_img_emb, cand_img_emb) if cand_img_emb else 0.0
-        txt_sim = cosine_similarity(src_txt_emb, cand_txt_emb) if cand_txt_emb else 0.0
-
-        scored.append({
-            "item": cand,
-            "img_sim": img_sim,
-            "txt_sim": txt_sim
-        })
+    target_type = "found" if source.get("type") == "lost" else "lost"
+    provider = get_vector_search_provider(settings.VECTOR_SEARCH_BACKEND)
+    scored = await provider.search(src_img_emb, src_txt_emb, filtered_candidates, target_type=target_type)
     
     state["scored_candidates"] = scored
     return state

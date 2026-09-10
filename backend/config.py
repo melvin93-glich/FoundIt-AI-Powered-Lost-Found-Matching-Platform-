@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     CLOUDINARY_API_KEY: str = os.getenv("CLOUDINARY_API_KEY", "")
     CLOUDINARY_API_SECRET: str = os.getenv("CLOUDINARY_API_SECRET", "")
 
+    VECTOR_SEARCH_BACKEND: str = os.getenv("VECTOR_SEARCH_BACKEND", "local")
+    EMBEDDING_MODEL_VERSION: str = "clip-vit-b32-v1"
+
     class Config:
         env_file = ".env"
 
