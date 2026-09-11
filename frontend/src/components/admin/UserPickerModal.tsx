@@ -67,11 +67,7 @@ export function UserPickerModal({ isOpen, type, onClose, onSuccess }: UserPicker
     const endpoint = type === "lost" ? "/admin/lost" : "/admin/found";
 
     try {
-      const resp = await api.post(endpoint, formData, {
-        headers: {
-          "Content-Type": "multipart/form-data",
-        },
-      });
+      const resp = await api.post(endpoint, formData);
       onSuccess(resp.data);
       onClose();
     } catch (err) {

@@ -72,8 +72,9 @@ export function Navbar() {
           {user ? (
             <div className="flex items-center gap-3">
               <Link
-                href="/dashboard"
+                href="/profile"
                 className="text-sm font-medium text-[#1E2022] hover:text-[#2E4A3E] bg-[#EAE7E1] px-3 py-1.5 rounded-md flex items-center gap-2"
+                title="View & edit profile"
               >
                 <User size={15} />
                 <span>{user.name}</span>

@@ -3,13 +3,15 @@
 import React, { useState } from "react";
 import Link from "next/link";
 import { Navbar, Footer } from "@/components/Navigation";
-import { ArrowRight, Lock, Mail, User as UserIcon, ShieldAlert } from "lucide-react";
+import { ArrowRight, Lock, Mail, User as UserIcon, ShieldAlert, Phone } from "lucide-react";
 import api from "@/lib/api";
 
 export default function RegisterPage() {
   const [name, setName] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [phone, setPhone] = useState("");
+  const [preferredContact, setPreferredContact] = useState("email");
   const [error, setError] = useState("");
   const [loading, setLoading] = useState(false);
 
@@ -23,6 +25,8 @@ export default function RegisterPage() {
         name,
         email,
         password,
+        phone: phone.trim() || null,
+        preferred_contact: preferredContact,
       });
 
       localStorage.setItem("foundit_token", resp.data.access_token);
@@ -31,7 +35,13 @@ export default function RegisterPage() {
     } catch (err: any) {
       console.error(err);
       // Demo fallback if backend is offline
-      const demoUser = { id: "demo_101", name, email };
+      const demoUser = {
+        id: "demo_101",
+        name,
+        email,
+        phone: phone.trim() || null,
+        preferred_contact: preferredContact,
+      };
       localStorage.setItem("foundit_token", "demo_jwt_token");
       localStorage.setItem("foundit_user", JSON.stringify(demoUser));
       window.location.href = "/dashboard";
@@ -113,6 +123,40 @@ export default function RegisterPage() {
                     className="w-full pl-9 pr-3 py-2 text-sm bg-[#FAF8F5] border border-[#E5E2DC] rounded-md focus:outline-none focus:border-[#2E4A3E]"
                   />
                 </div>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#1E2022] uppercase tracking-wider mb-1">
+                  Phone Number <span className="text-[#72787E] font-normal">(Optional)</span>
+                </label>
+                <div className="relative">
+                  <Phone size={16} className="absolute left-3 top-3 text-[#72787E]" />
+                  <input
+                    type="tel"
+                    value={phone}
+                    onChange={(e) => setPhone(e.target.value)}
+                    placeholder="+1 (555) 019-2834"
+                    className="w-full pl-9 pr-3 py-2 text-sm bg-[#FAF8F5] border border-[#E5E2DC] rounded-md focus:outline-none focus:border-[#2E4A3E]"
+                  />
+                </div>
+                <p className="text-[11px] text-[#72787E] mt-1">
+                  Only shared with matched item owners after mutual confirmation.
+                </p>
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-[#1E2022] uppercase tracking-wider mb-1">
+                  Preferred Contact Method
+                </label>
+                <select
+                  value={preferredContact}
+                  onChange={(e) => setPreferredContact(e.target.value)}
+                  className="w-full px-3 py-2 text-sm bg-[#FAF8F5] border border-[#E5E2DC] rounded-md focus:outline-none focus:border-[#2E4A3E]"
+                >
+                  <option value="email">Email</option>
+                  <option value="phone">Phone / SMS</option>
+                  <option value="both">Both Email & Phone</option>
+                </select>
               </div>
 
               <button

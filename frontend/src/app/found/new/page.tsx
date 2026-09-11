@@ -2,7 +2,7 @@
 
 import React, { useState } from "react";
 import { Navbar, Footer } from "@/components/Navigation";
-import { Upload, MapPin, Calendar, Tag, ArrowRight, CheckCircle2 } from "lucide-react";
+import { Upload, MapPin, Calendar, Tag, ArrowRight, CheckCircle2, ShieldAlert } from "lucide-react";
 import api from "@/lib/api";
 
 export default function ReportFoundPage() {
@@ -16,6 +16,7 @@ export default function ReportFoundPage() {
 
   const [loading, setLoading] = useState(false);
   const [submittedId, setSubmittedId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
 
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
@@ -27,6 +28,7 @@ export default function ReportFoundPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setError(null);
     setLoading(true);
 
     try {
@@ -40,15 +42,14 @@ export default function ReportFoundPage() {
         formData.append("file", file);
       }
 
-      const resp = await api.post("/found", formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
+      const resp = await api.post("/found", formData);
 
       setSubmittedId(resp.data.id);
-    } catch (err) {
+    } catch (err: any) {
       console.error(err);
-      // Demo fallback
-      setSubmittedId("demo_found_888");
+      if (err.response?.status !== 401) {
+        setError(err.response?.data?.detail || "Failed to submit found item report. Please check your inputs and try again.");
+      }
     } finally {
       setLoading(false);
     }
@@ -102,6 +103,12 @@ export default function ReportFoundPage() {
             </div>
           ) : (
             <form onSubmit={handleSubmit} className="custom-card rounded-xl p-6 sm:p-8 bg-white space-y-6">
+              {error && (
+                <div className="bg-red-50 text-red-700 p-3.5 rounded-md text-xs border border-red-200 flex items-center gap-2">
+                  <ShieldAlert size={16} className="shrink-0 text-red-600" />
+                  <span>{error}</span>
+                </div>
+              )}
               
               {/* Photo Upload Box */}
               <div>

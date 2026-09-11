@@ -39,3 +39,26 @@ This document details all 8 production hardening patches implemented across the 
   - Updated `DELETE /lost/{id}`, `DELETE /found/{id}`, `DELETE /admin/lost/{id}`, and `DELETE /admin/found/{id}` to perform soft deletes (`deleted: true`, `deleted_at: timestamp`).
   - Filtered out `deleted: true` items from all public and admin listing endpoints (`GET /lost`, `GET /found`, `GET /admin/lost`, `GET /admin/found`).
   - Stored a complete JSON snapshot of key item fields (`title`, `description`, `category`, `location`, `image_url`, `user_id`) directly in `admin_actions` audit log entries for immutable reporting.
+
+### 9. Async LangGraph Node Consistency Fix (GET /matches/{item_id})
+- **What broke**: `GET /matches/{item_id}` crashed with `TypeError: No synchronous function provided to "vector_search"` because the `vector_search` node was registered as `async def` but `routes/match.py` called the compiled graph via the synchronous `agent_graph.invoke(...)`.
+- **Root cause**: A mixed sync/async graph cannot be driven by the synchronous `.invoke()` API — LangGraph raises a `TypeError` when it encounters an async node in that path.
+### 10. Contact Detail Visibility After Match Confirmation
+- **Implementation**:
+  - **Data Model**: Extended `UserRegister`, `UserResponse`, and database documents with optional `phone` (string) and `preferred_contact` (`"email"` | `"phone"` | `"both"`). Added `UserProfileUpdate` and privacy-safe `ContactInfo` models that explicitly exclude `password_hash`, `role`, and internal fields.
+  - **Match Confirmation & Unlocking**: Updated `POST /match/{item_id}` to store mutual matches in a `confirmed_matches` collection and return `ContactInfo` for both parties. Added `GET /match/{item_id}/contacts` for re-fetching confirmed contacts.
+  - **Privacy Enforcement**: Added server-side ownership checks on contact endpoints — contact details are strictly hidden prior to confirmation and only accessible by the two involved item owners or an admin.
+  - **Audit Logging**: Integrated `contact_reveal` audit log entries into the existing `admin_actions` collection whenever contact details are disclosed.
+  - **Frontend UI**: Added optional Phone and Preferred Contact inputs to user registration, created a `/profile` management page, updated Navbar user badge links, and added a Contact Card component with clickable `mailto:` and `tel:` links on `/matches/[id]`.
+
+### 11. Photo-less Report Submission Fix (False "Session Expired" Redirect)
+- **What broke**: Submitting a report without a photo redirected to `/login?expired=1` with "Your session expired — please log back in", even while logged in.
+- **Root cause**:
+  1. Frontend submission forms in `lost/new/page.tsx`, `found/new/page.tsx`, and `UserPickerModal.tsx` explicitly set `headers: { "Content-Type": "multipart/form-data" }` in `api.post(...)`. When `FormData` contained text-only inputs with no binary `File`, Axios sent `Content-Type: multipart/form-data` literally without generating the required `boundary` string. FastAPI/Uvicorn failed to parse the multipart stream and returned `HTTP 400 Bad Request: Missing boundary in multipart`.
+  2. In `api.ts`, setting `config.headers.Authorization` directly as an object property on `AxiosHeaders` in Axios 1.x failed to serialize when custom header options were passed, causing `get_current_user` or auth-gated handlers to return `HTTP 401 Unauthorized`, which triggered the global 401 response interceptor and redirected the user to login.
+- **Fix**:
+  - Removed explicit `headers: { "Content-Type": "multipart/form-data" }` from `api.post(...)` calls, allowing Axios and the browser to automatically compute and set the proper `multipart/form-data; boundary=...` header whether a photo is attached or omitted.
+  - Updated `api.ts` request interceptor to use `config.headers.set("Authorization", ...)` for reliable header attachment in Axios 1.x.
+  - Added inline form error alerts in `lost/new/page.tsx` and `found/new/page.tsx` so non-auth validation or server errors are displayed gracefully instead of redirecting or silently failing.
+
+
