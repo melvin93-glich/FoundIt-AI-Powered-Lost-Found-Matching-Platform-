@@ -1,0 +1,187 @@
+[
+  {
+    "id": "pair_01",
+    "source_item": {
+      "id": "lost_wallet_01",
+      "type": "lost",
+      "title": "Black Leather Wallet with ID",
+      "description": "Black bifold genuine leather wallet lost in library 2nd floor",
+      "category": "Wallets & Bags",
+      "location": "Central Library",
+      "detected_objects": ["wallet"],
+      "extracted_text": "DRIVERS LICENSE"
+    },
+    "candidate_items": [
+      {
+        "id": "found_wallet_01",
+        "type": "found",
+        "title": "Found Black Leather Bifold Wallet",
+        "description": "Black leather bifold wallet found in quiet study room",
+        "category": "Wallets & Bags",
+        "location": "Central Library",
+        "detected_objects": ["wallet"],
+        "extracted_text": "DRIVERS LICENSE",
+        "is_relevant": true
+      },
+      {
+        "id": "found_bottle_01",
+        "type": "found",
+        "title": "Blue Water Bottle",
+        "description": "Metal water bottle found in cafeteria",
+        "category": "Personal Belongings",
+        "location": "Student Center",
+        "detected_objects": ["bottle"],
+        "extracted_text": "HYDRO",
+        "is_relevant": false
+      }
+    ]
+  },
+  {
+    "id": "pair_02",
+    "source_item": {
+      "id": "lost_phone_02",
+      "type": "lost",
+      "title": "iPhone 13 Pro Max Blue Case",
+      "description": "Sierra blue iPhone with black silicone protective case",
+      "category": "Electronics",
+      "location": "Science Building",
+      "detected_objects": ["cell phone"],
+      "extracted_text": "APPLE"
+    },
+    "candidate_items": [
+      {
+        "id": "found_phone_02",
+        "type": "found",
+        "title": "Found iPhone in Blue Case",
+        "description": "Apple smartphone with dark blue case turned in at front desk",
+        "category": "Electronics",
+        "location": "Science Building",
+        "detected_objects": ["cell phone"],
+        "extracted_text": "IPHONE",
+        "is_relevant": true
+      },
+      {
+        "id": "found_keys_02",
+        "type": "found",
+        "title": "Set of Car Keys",
+        "description": "Toyota car key fob on metal ring",
+        "category": "Keys & Identification",
+        "location": "Science Building",
+        "detected_objects": ["key"],
+        "extracted_text": "TOYOTA",
+        "is_relevant": false
+      }
+    ]
+  },
+  {
+    "id": "pair_03",
+    "source_item": {
+      "id": "lost_keys_03",
+      "type": "lost",
+      "title": "Honda Key Fob with Lanyard",
+      "description": "Honda car key attached to red campus lanyard",
+      "category": "Keys & Identification",
+      "location": "Engineering Quad",
+      "detected_objects": ["key"],
+      "extracted_text": "HONDA"
+    },
+    "candidate_items": [
+      {
+        "id": "found_keys_03",
+        "type": "found",
+        "title": "Car Key Fob Red Lanyard",
+        "description": "Honda remote key found on grass near quad bench",
+        "category": "Keys & Identification",
+        "location": "Engineering Quad",
+        "detected_objects": ["key"],
+        "extracted_text": "HONDA",
+        "is_relevant": true
+      },
+      {
+        "id": "found_bag_03",
+        "type": "found",
+        "title": "Black Laptop Backpack",
+        "description": "Dell laptop backpack left near lecture hall",
+        "category": "Wallets & Bags",
+        "location": "Engineering Quad",
+        "detected_objects": ["backpack"],
+        "extracted_text": "DELL",
+        "is_relevant": false
+      }
+    ]
+  },
+  {
+    "id": "pair_04",
+    "source_item": {
+      "id": "lost_headphones_04",
+      "type": "lost",
+      "title": "Sony WH-1000XM4 Headphones",
+      "description": "Over-ear noise canceling headphones in black carrying case",
+      "category": "Electronics",
+      "location": "Student Union",
+      "detected_objects": ["headphones"],
+      "extracted_text": "SONY"
+    },
+    "candidate_items": [
+      {
+        "id": "found_headphones_04",
+        "type": "found",
+        "title": "Found Sony Wireless Headphones",
+        "description": "Black wireless headphones inside zipped case found at lounge",
+        "category": "Electronics",
+        "location": "Student Union",
+        "detected_objects": ["headphones"],
+        "extracted_text": "SONY",
+        "is_relevant": true
+      },
+      {
+        "id": "found_jacket_04",
+        "type": "found",
+        "title": "Denim Jacket Size M",
+        "description": "Blue denim jacket left on chair",
+        "category": "Clothing & Accessories",
+        "location": "Student Union",
+        "detected_objects": ["clothing"],
+        "extracted_text": "LEVIS",
+        "is_relevant": false
+      }
+    ]
+  },
+  {
+    "id": "pair_05",
+    "source_item": {
+      "id": "lost_glasses_05",
+      "type": "lost",
+      "title": "Ray-Ban Tortoiseshell Prescription Glasses",
+      "description": "Brown tortoiseshell frame reading glasses in black leather case",
+      "category": "Personal Belongings",
+      "location": "Dining Hall",
+      "detected_objects": ["glasses"],
+      "extracted_text": "RAY-BAN"
+    },
+    "candidate_items": [
+      {
+        "id": "found_glasses_05",
+        "type": "found",
+        "title": "Brown Frame Eyeglasses",
+        "description": "Tortoiseshell optical glasses found on tray table",
+        "category": "Personal Belongings",
+        "location": "Dining Hall",
+        "detected_objects": ["glasses"],
+        "extracted_text": "RAY-BAN",
+        "is_relevant": true
+      },
+      {
+        "id": "found_watch_05",
+        "type": "found",
+        "title": "Silver Wrist Watch",
+        "description": "Analog wrist watch with stainless steel strap",
+        "category": "Personal Belongings",
+        "location": "Dining Hall",
+        "detected_objects": ["clock"],
+        "extracted_text": "CASIO",
+        "is_relevant": false
+      }
+    ]
+  }
+]

@@ -1,0 +1,11 @@
+{
+  "evaluation_summary": {
+    "total_queries": 5,
+    "precision_at_1": 1.0,
+    "precision_at_3": 0.5,
+    "recall_at_1": 1.0,
+    "recall_at_3": 1.0,
+    "mean_average_precision_mAP": 1.0,
+    "average_end_to_end_latency_ms": 1860.63
+  }
+}
