@@ -29,19 +29,25 @@ async def understand_request(state: AgentState) -> AgentState:
 async def generate_embeddings(state: AgentState) -> AgentState:
     """Node 2 (async): Generate CLIP image embedding and BGE text embedding.
 
-    CLIP and BGE are synchronous PyTorch calls, so they are offloaded to a
-    thread pool via asyncio.to_thread to avoid blocking the event loop.
+    Checks if valid embeddings are already stored on the source item before
+    offloading PyTorch calls to asyncio.to_thread.
     """
     source = state["source_item"]
-    img_url = source.get("image_url")
-    text = source.get("unified_query_text", source.get("description", ""))
 
-    # Off-thread: blocking CPU/network calls
-    if img_url:
-        image_emb = await asyncio.to_thread(clip_service.get_image_embedding, img_url)
-    else:
-        image_emb = [0.0]*512
-    text_emb = await asyncio.to_thread(text_service.get_text_embedding, text)
+    # 1. Text embedding: reuse stored vector if present, else compute
+    text_emb = state.get("text_embedding") or source.get("text_embedding")
+    if not text_emb or len(text_emb) == 0:
+        text = source.get("unified_query_text", source.get("description", ""))
+        text_emb = await asyncio.to_thread(text_service.get_text_embedding, text)
+
+    # 2. Image embedding: reuse stored vector if present & non-zero, else compute
+    image_emb = state.get("image_embedding") or source.get("image_embedding")
+    if not image_emb or not any(v != 0.0 for v in image_emb):
+        img_url = source.get("image_url")
+        if img_url:
+            image_emb = await asyncio.to_thread(clip_service.get_image_embedding, img_url)
+        else:
+            image_emb = [0.0] * 512
 
     state["image_embedding"] = image_emb
     state["text_embedding"] = text_emb

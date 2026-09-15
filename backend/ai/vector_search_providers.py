@@ -66,8 +66,11 @@ class LocalCosineProvider(VectorSearchProvider):
     ) -> List[Dict[str, Any]]:
         scored = []
         for cand in candidates:
-            # Skip soft-deleted items — text-only items are NOT filtered out
+            # Skip soft-deleted items
             if cand.get("deleted") is True:
+                continue
+            # Enforce target_type filter if specified
+            if target_type and cand.get("type") and cand.get("type") != target_type:
                 continue
             scored.append(_score_pair(src_img_emb, src_txt_emb, cand))
         return scored

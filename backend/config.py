@@ -15,6 +15,15 @@ class Settings(BaseSettings):
     VECTOR_SEARCH_BACKEND: str = os.getenv("VECTOR_SEARCH_BACKEND", "local")
     EMBEDDING_MODEL_VERSION: str = "clip-vit-b32-v1"
 
+    # Email Service (Gmail SMTP)
+    EMAIL_ADDRESS: str = os.getenv("EMAIL_ADDRESS", "")
+    EMAIL_APP_PASSWORD: str = os.getenv("EMAIL_APP_PASSWORD", "")
+    EMAIL_FROM_NAME: str = os.getenv("EMAIL_FROM_NAME", "FoundIt AI Platform")
+    FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:3000")
+
+    # Match Notifications Threshold
+    MATCH_NOTIFICATION_THRESHOLD: float = 0.50
+
     class Config:
         env_file = ".env"
 

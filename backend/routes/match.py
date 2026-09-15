@@ -9,7 +9,16 @@ from services.db import get_database
 from services.auth_service import get_current_user
 from ai.agent_graph import agent_graph
 from bson import ObjectId
-from datetime import datetime
+import logging
+import asyncio
+from config import settings
+from services.email_service import (
+    send_email_async,
+    build_candidate_match_email,
+    build_confirmed_match_email,
+)
+
+logger = logging.getLogger(__name__)
 
 router = APIRouter(tags=["Matches"])
 
@@ -126,12 +135,107 @@ async def get_item_matches(item_id: str):
     for cand in raw_candidates:
         tgt = cand["target_item"]
         sb = cand["score_breakdown"]
+        tot_score = sb.get("total_score", 0.0)
+
         candidates_response.append(MatchCandidate(
             item_id=tgt["id"],
             target_item=tgt,
             score_breakdown=ScoreBreakdown(**sb),
             explanation=cand.get("explanation", "High overall matching score across multimodal features.")
         ))
+
+        # Upsert candidate into db["matches"] collection for user match overview
+        if db is not None:
+            match_pair_filter = {
+                "lost_item_id": source_item["id"] if source_item.get("type") == "lost" else tgt["id"],
+                "found_item_id": tgt["id"] if source_item.get("type") == "lost" else source_item["id"],
+            }
+            match_pair_doc = {
+                "lost_item_id": match_pair_filter["lost_item_id"],
+                "found_item_id": match_pair_filter["found_item_id"],
+                "lost_user_id": source_item.get("user_id") if source_item.get("type") == "lost" else tgt.get("user_id"),
+                "found_user_id": tgt.get("user_id") if source_item.get("type") == "lost" else source_item.get("user_id"),
+                "lost_item": {
+                    "id": source_item["id"] if source_item.get("type") == "lost" else tgt["id"],
+                    "title": source_item.get("title") if source_item.get("type") == "lost" else tgt.get("title"),
+                    "category": source_item.get("category") if source_item.get("type") == "lost" else tgt.get("category"),
+                    "location": source_item.get("location") if source_item.get("type") == "lost" else tgt.get("location"),
+                    "image_url": source_item.get("image_url") if source_item.get("type") == "lost" else tgt.get("image_url"),
+                    "user_name": source_item.get("user_name") if source_item.get("type") == "lost" else tgt.get("user_name"),
+                },
+                "found_item": {
+                    "id": tgt["id"] if source_item.get("type") == "lost" else source_item["id"],
+                    "title": tgt.get("title") if source_item.get("type") == "lost" else source_item.get("title"),
+                    "category": tgt.get("category") if source_item.get("type") == "lost" else source_item.get("category"),
+                    "location": tgt.get("location") if source_item.get("type") == "lost" else source_item.get("location"),
+                    "image_url": tgt.get("image_url") if source_item.get("type") == "lost" else source_item.get("image_url"),
+                    "user_name": tgt.get("user_name") if source_item.get("type") == "lost" else source_item.get("user_name"),
+                },
+                "score": tot_score,
+                "status": "pending",
+                "updated_at": datetime.utcnow()
+            }
+            # Preserve status if already confirmed
+            existing_m = await db["matches"].find_one(match_pair_filter)
+            if existing_m and existing_m.get("status") == "confirmed":
+                match_pair_doc["status"] = "confirmed"
+            await db["matches"].update_one(match_pair_filter, {"$set": match_pair_doc}, upsert=True)
+
+        # TRIGGER 1: Lost item reporter candidate match notification
+        if db is not None and source_item.get("type") == "lost" and tot_score >= settings.MATCH_NOTIFICATION_THRESHOLD:
+            lost_user_id = source_item.get("user_id")
+            lost_item_id = source_item["id"]
+            found_item_id = tgt["id"]
+
+            if lost_user_id:
+                # Deduplication check
+                already_notified = await db["notifications_sent"].find_one({
+                    "lost_item_id": lost_item_id,
+                    "candidate_id": found_item_id
+                })
+
+                if not already_notified:
+                    # Record notification sent
+                    await db["notifications_sent"].insert_one({
+                        "lost_item_id": lost_item_id,
+                        "candidate_id": found_item_id,
+                        "notified_at": datetime.utcnow()
+                    })
+
+                    # Create in-app notification
+                    score_pct = int(tot_score * 100)
+                    notif_doc = {
+                        "user_id": lost_user_id,
+                        "type": "match_found",
+                        "title": "Possible Match Detected!",
+                        "message": f"A candidate match ({score_pct}% score) was found for your lost item: {source_item.get('title')}",
+                        "related_match_id": lost_item_id,
+                        "read": False,
+                        "created_at": datetime.utcnow()
+                    }
+                    await db["notifications"].insert_one(notif_doc)
+
+                    # Trigger email to lost item owner
+                    try:
+                        lost_user = await db["users"].find_one({"_id": ObjectId(lost_user_id)})
+                        if lost_user and lost_user.get("email"):
+                            match_url = f"{settings.FRONTEND_URL}/matches/{lost_item_id}"
+                            email_html = build_candidate_match_email(
+                                user_name=lost_user.get("name", "User"),
+                                lost_item=source_item,
+                                found_item=tgt,
+                                score_pct=score_pct,
+                                match_link=match_url
+                            )
+                            # Non-blocking async email send
+                            from services.email_service import send_email_async
+                            asyncio.create_task(send_email_async(
+                                to_email=lost_user["email"],
+                                subject=f"Good news — a possible match was found for your {source_item.get('title')}",
+                                html_content=email_html
+                            ))
+                    except Exception as email_err:
+                        logger.error(f"Failed to dispatch candidate match email: {email_err}")
 
     return MatchResponse(
         source_item_id=item_id,
@@ -210,6 +314,13 @@ async def confirm_match(
         insert_result = await db["confirmed_matches"].insert_one(match_doc)
         match_doc_id = str(insert_result.inserted_id)
 
+        # Update db["matches"] collection status to "confirmed"
+        await db["matches"].update_one(
+            {"lost_item_id": lost_item_id, "found_item_id": found_item_id},
+            {"$set": {"status": "confirmed", "confirmed_at": now, "confirmed_by": confirmed_by}},
+            upsert=True
+        )
+
         # 4. Look up both users' contact info
         if lost_user_id:
             try:
@@ -226,7 +337,52 @@ async def confirm_match(
             except Exception:
                 pass
 
-        # 5. Audit log — contact reveal
+        # 5. TRIGGER 2: Notify the FOUND item's reporter upon match confirmation
+        if found_user_id:
+            found_user_doc = None
+            try:
+                found_user_doc = await db["users"].find_one({"_id": ObjectId(found_user_id)})
+            except Exception:
+                pass
+
+            if found_user_doc:
+                # In-app notification for finder
+                found_title = candidate_item.get("title", "Found Item") if candidate_item else "Found Item"
+                notif_doc = {
+                    "user_id": found_user_id,
+                    "type": "match_confirmed",
+                    "title": "Match Confirmed!",
+                    "message": f"Your found item '{found_title}' was confirmed as a match! Contact info for the owner is now unlocked.",
+                    "related_match_id": lost_item_id,
+                    "read": False,
+                    "created_at": now
+                }
+                await db["notifications"].insert_one(notif_doc)
+
+                # Email for finder
+                if found_user_doc.get("email"):
+                    try:
+                        other_name = reporter_contact.name if reporter_contact else "Item Owner"
+                        other_email = reporter_contact.email if reporter_contact else ""
+                        other_phone = reporter_contact.phone if reporter_contact else None
+                        match_url = f"{settings.FRONTEND_URL}/matches/{lost_item_id}"
+                        email_html = build_confirmed_match_email(
+                            user_name=found_user_doc.get("name", "User"),
+                            item_title=found_title,
+                            other_party_name=other_name,
+                            contact_email=other_email,
+                            contact_phone=other_phone,
+                            match_link=match_url
+                        )
+                        asyncio.create_task(send_email_async(
+                            to_email=found_user_doc["email"],
+                            subject=f"Match Confirmed for your found item '{found_title}'",
+                            html_content=email_html
+                        ))
+                    except Exception as email_err:
+                        logger.error(f"Failed to dispatch match confirmed email to finder: {email_err}")
+
+        # 6. Audit log — contact reveal
         if current_user:
             other_user_id = (
                 found_user_id if current_user["id"] == lost_user_id else lost_user_id
@@ -328,3 +484,78 @@ async def get_match_contacts(
         lost_item_id=match_doc["lost_item_id"],
         found_item_id=match_doc["found_item_id"],
     )
+
+
+# ---------------------------------------------------------------------------
+# GET /matches — list all match records for the current user (lost or found)
+# ---------------------------------------------------------------------------
+@router.get("/matches")
+async def list_user_matches(
+    status_filter: Optional[str] = None,
+    current_user=Depends(get_current_user)
+):
+    """Retrieve all matches where current user is the reporter of either side.
+
+    Gates full contact info (email/phone) to confirmed matches only.
+    """
+    if not current_user:
+        raise HTTPException(status_code=401, detail="Authentication required")
+
+    user_id = str(current_user["id"])
+    db = get_database()
+    if db is None:
+        return {"matches": []}
+
+    query: Dict[str, Any] = {
+        "$or": [
+            {"lost_user_id": user_id},
+            {"found_user_id": user_id},
+        ]
+    }
+    if status_filter and status_filter.lower() in ["pending", "confirmed"]:
+        query["status"] = status_filter.lower()
+
+    cursor = db["matches"].find(query).sort("updated_at", -1)
+    results = []
+    async for doc in cursor:
+        m_status = doc.get("status", "pending")
+        lost_u_id = doc.get("lost_user_id")
+        found_u_id = doc.get("found_user_id")
+
+        # Contact details gating logic
+        reporter_contact_info = None
+        finder_contact_info = None
+
+        if m_status == "confirmed":
+            lost_user = None
+            found_user = None
+            if lost_u_id:
+                try:
+                    lost_user = await db["users"].find_one({"_id": ObjectId(lost_u_id)})
+                except Exception:
+                    pass
+            if found_u_id:
+                try:
+                    found_user = await db["users"].find_one({"_id": ObjectId(found_u_id)})
+                except Exception:
+                    pass
+            if lost_user:
+                reporter_contact_info = _contact_from_user(lost_user).dict()
+            if found_user:
+                finder_contact_info = _contact_from_user(found_user).dict()
+
+        results.append({
+            "id": str(doc["_id"]),
+            "lost_item_id": doc.get("lost_item_id"),
+            "found_item_id": doc.get("found_item_id"),
+            "score": round(float(doc.get("score", 0.0)), 4),
+            "score_pct": int(float(doc.get("score", 0.0)) * 100),
+            "status": m_status,
+            "lost_item": doc.get("lost_item", {}),
+            "found_item": doc.get("found_item", {}),
+            "reporter_contact": reporter_contact_info,
+            "finder_contact": finder_contact_info,
+            "updated_at": doc.get("updated_at", datetime.utcnow()),
+        })
+
+    return {"matches": results}

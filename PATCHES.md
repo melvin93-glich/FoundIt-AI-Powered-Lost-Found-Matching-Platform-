@@ -56,9 +56,25 @@ This document details all 8 production hardening patches implemented across the 
 - **Root cause**:
   1. Frontend submission forms in `lost/new/page.tsx`, `found/new/page.tsx`, and `UserPickerModal.tsx` explicitly set `headers: { "Content-Type": "multipart/form-data" }` in `api.post(...)`. When `FormData` contained text-only inputs with no binary `File`, Axios sent `Content-Type: multipart/form-data` literally without generating the required `boundary` string. FastAPI/Uvicorn failed to parse the multipart stream and returned `HTTP 400 Bad Request: Missing boundary in multipart`.
   2. In `api.ts`, setting `config.headers.Authorization` directly as an object property on `AxiosHeaders` in Axios 1.x failed to serialize when custom header options were passed, causing `get_current_user` or auth-gated handlers to return `HTTP 401 Unauthorized`, which triggered the global 401 response interceptor and redirected the user to login.
-- **Fix**:
-  - Removed explicit `headers: { "Content-Type": "multipart/form-data" }` from `api.post(...)` calls, allowing Axios and the browser to automatically compute and set the proper `multipart/form-data; boundary=...` header whether a photo is attached or omitted.
-  - Updated `api.ts` request interceptor to use `config.headers.set("Authorization", ...)` for reliable header attachment in Axios 1.x.
-  - Added inline form error alerts in `lost/new/page.tsx` and `found/new/page.tsx` so non-auth validation or server errors are displayed gracefully instead of redirecting or silently failing.
+### 12. Grounded AI Assistant Chatbot
+- **Implementation**:
+  - **Backend Orchestration**: Created `backend/ai/assistant_graph.py` implementing a grounded AI assistant graph with tool capabilities: `search_items` (BGE text embedding vector search), `extract_report_fields` (structured report field parsing), `explain_match` (reusing matching logic), `get_match_status` (MongoDB status lookup), and `get_contact_info` (enforcing strict ownership authorization checks).
+  - **API Route**: Created `POST /assistant/chat` in `backend/routes/assistant.py` requiring authentication, sliding window rate-limiting (15 req/min), and persistence in an `assistant_conversations` collection.
+### 13. Match Notifications (Email + In-App)
+- **Implementation**:
+  - **Email Service**: Added `backend/services/email_service.py` using Python's `smtplib.SMTP_SSL` (Gmail SMTP port 465) with safe async thread offloading and HTML email templates for candidate match alerts and match confirmation notices.
+  - **In-App Notifications**: Added `notifications` MongoDB collection and `backend/routes/notifications.py` endpoints (`GET /notifications`, `PATCH /notifications/{id}/read`, `PATCH /notifications/read-all`).
+  - **Candidate Match Trigger**: Integrated candidate notification check into `GET /matches/{item_id}` for lost items with match scores >= 50% (`MATCH_NOTIFICATION_THRESHOLD = 0.50`), with deduplication tracking via `notifications_sent` collection.
+  - **Confirmation Trigger**: Integrated finder notification check into `POST /match/{item_id}` (confirm match), notifying the found item's reporter with unlocked contact details once a match is confirmed.
+### 14. AI Matching Pipeline Fix & Matches Overview Page (/matches)
+- **Part 1 AI Matching Fix**:
+  - **Embedding Preservation**: Updated `generate_embeddings` node in `backend/ai/agent_graph.py` to reuse stored `image_embedding` and `text_embedding` vectors from MongoDB instead of forcing an HTTP re-download of `image_url` that defaulted to zero-vectors (`[0.0]*512`) on missing/demo images.
+  - **Vector Search Provider Filtering**: Updated `LocalCosineProvider.search` in `backend/ai/vector_search_providers.py` to filter candidates by `target_type` (`lost` vs `found`) and exclude soft-deleted items.
+- **Part 2 Matches Overview Page (/matches)**:
+  - **Backend Endpoint**: Added `GET /matches` in `backend/routes/match.py` returning user match records from `db["matches"]` with contact info gated to confirmed matches only.
+  - **Frontend UI**: Built `frontend/src/app/matches/page.tsx` featuring side-by-side paired item cards (Lost ↔ Found), clean green match accenting, confidence score badges, status filter tabs (`All` / `Pending` / `Confirmed`), gated contact details, and friendly empty state. Added "Matches" link in `Navigation.tsx`.
+
+
+
 
 

@@ -18,6 +18,17 @@ export default function ReportFoundPage() {
   const [submittedId, setSubmittedId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
+  React.useEffect(() => {
+    if (typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.get("title")) setTitle(params.get("title") || "");
+      if (params.get("category")) setCategory(params.get("category") || "Electronics");
+      if (params.get("location")) setLocation(params.get("location") || "");
+      if (params.get("date_time")) setDateTime(params.get("date_time") || "");
+      if (params.get("description")) setDescription(params.get("description") || "");
+    }
+  }, []);
+
   const handleImageChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const selected = e.target.files[0];

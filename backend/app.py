@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
 from services.db import connect_db, close_db
-from routes import auth, lost, found, match, admin
+from routes import auth, lost, found, match, admin, assistant, notifications
 
 import time
 from starlette.concurrency import run_in_threadpool
@@ -77,6 +77,8 @@ app.include_router(lost.router)
 app.include_router(found.router)
 app.include_router(match.router)
 app.include_router(admin.router)
+app.include_router(assistant.router)
+app.include_router(notifications.router)
 
 @app.get("/")
 async def root():

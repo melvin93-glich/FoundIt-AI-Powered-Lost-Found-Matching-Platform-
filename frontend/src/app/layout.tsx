@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { Space_Grotesk, Plus_Jakarta_Sans } from "next/font/google";
 import "./globals.css";
+import { AssistantChat } from "@/components/AssistantChat";
 
 const displayFont = Space_Grotesk({
   subsets: ["latin"],
@@ -28,6 +29,7 @@ export default function RootLayout({
     <html lang="en" className={`${displayFont.variable} ${bodyFont.variable}`}>
       <body className="font-body bg-[#FAF8F5] text-[#1E2022] antialiased selection:bg-[#2E4A3E] selection:text-white min-h-screen flex flex-col">
         {children}
+        <AssistantChat />
       </body>
     </html>
   );
